@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+option csharp_namespace = "Web.UI";
+
+package surman;
+
+service Messanger{
+	rpc MessageStream (stream MessageContext) returns (stream MessageContext);
+}
+
+message MessageContext{
+
+	int64 users_id = 1;
+	string context = 2;
+	int64 dialog_id = 3;
+}

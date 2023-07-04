@@ -1,0 +1,122 @@
+﻿@page "/createaccount"
+@model CreateAccountModel
+
+<div class="container">
+    <div class="row mt-3">
+        <div class="col-3"></div>
+        <div class="col-6" asp-validation-summary="All">
+            <h4 class="text-center text-white" style="border-radius: 15px; background-color: #06313a">
+                Insert your data to create Account...
+            </h4>
+            <form asp-page="createaccount" method="post">
+                <div class="form-group">
+                    <label>Your Name:</label>
+                    <input asp-for="Name" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Your Password:</label>
+                    <input asp-for="Password" class="form-control" type="password" />
+                </div>
+                <div class="form-group">
+                    <label>Your Email:</label>
+                    <input asp-for="Email" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Your Address:</label>
+                    <input asp-for="Address" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Your Telephone:</label>
+                    <input asp-for="Telephone" class="form-control" />
+                </div>
+                <br />
+                <div class="text-center">
+                    <button class="btn text-white" style="background-color: #06313a" type="submit">Create</button>
+                </div>
+            </form>
+        </div>
+        <div class="col-3"></div>
+    </div>
+</div>
+
+@functions{
+    public class CreateAccountModel : PageModel
+    {
+        private IMemoryCache cache;
+
+        public CreateAccountModel(IMemoryCache cache)
+        {
+            this.cache = cache;
+        }
+
+        [BindProperty]
+        [Required(ErrorMessage ="This field is important!")]
+        public string Name { get; set; }
+
+        [EmailAddress(ErrorMessage ="It is not looks like email address, be more attentevly")]
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Email { get; set; }
+
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Password { get; set; }
+
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Telephone { get; set; }
+
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Address { get; set; }
+
+        public IActionResult OnGet()
+        {
+            return Page();
+        }
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            if (ModelState.IsValid)
+            {
+                HttpClient client = new HttpClient();
+
+                Dictionary<string, string> content = new Dictionary<string, string>()
+            {
+                {"Name", Name },
+                {"Email", Email },
+                {"Password", Password },
+                {"Telephone", Telephone},
+                {"Address", Address }
+            };
+
+                var encContent = new FormUrlEncodedContent(content);
+
+                var responce = await client.PostAsync("http://localhost:5200/api/userservice/create", encContent);
+
+                if (responce.IsSuccessStatusCode)
+                {
+                    string token = await responce.Content.ReadAsStringAsync();
+
+                    try
+                    {
+                        cache.Remove("token");
+                    }
+                    catch
+                    {
+
+                    }
+
+                    cache.Set<string>("token", token);
+
+                    return Redirect("/notifyer/profile");
+                }
+            }
+
+            return Page();
+
+
+        }
+
+    }
+}

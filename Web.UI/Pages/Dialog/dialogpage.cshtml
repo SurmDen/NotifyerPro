@@ -1,0 +1,175 @@
+﻿@page "/dialogpage/{id}"
+@model DialogPage
+
+<div class="container">
+    <div class="row">
+        <div class="col-3"></div>
+        <div class="col-lg-6 col-md-8 col-sm-12 p-0" style="display:flex; width:500px; flex-direction:column; border:3px solid black; border-radius:10px;">
+            <h5 class=" text-uppercase" style="font-style:oblique; color:#274c4c">@Model.SelectedUser.Name</h5>
+            <div style="position:relative; background-color:#274c4c; border-radius:10px;
+                    height:500px; max-width:500px; overflow:auto;" class="scroll">
+
+                @if (Model.Dialog.Messages?.Count() == 0)
+                {
+
+                }
+                else
+                {
+                    @await foreach (MessageContext mes in Model.messages)
+                    {
+                        @if (mes.UsersId == Model.CurrentUser.Id)
+                        {
+                            <div style="width:200px; height:auto; margin-left:280px; color:#90dcf4; word-break:break-all;">
+                                @mes.Context
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="width:200px; height:auto;  color:#90dcf4; word-break:break-all;">
+                                @mes.Context
+                            </div>
+                        }
+                    }
+                }
+            </div>
+            <div class="mt-2">
+                <form asp-page="dialogpage" method="post">
+                    <div class="form-group" style="display:flex;">
+                        <input asp-for="FormMessage" class="form-control" />
+                        <button asp-route="/notifyer/dialog/@Model.SelectedUser.Id" style="margin-left:-55px;" class="btn btn-info">send</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+@functions{
+    public class DialogPage : PageModel
+    {
+        private IMemoryCache cache;
+
+        public DialogPage(IMemoryCache cache)
+        {
+            this.cache = cache;
+        }
+
+        public User CurrentUser { get; set; }
+
+        public User SelectedUser { get; set; }
+
+        public Dialog Dialog { get; set; }
+
+        [BindProperty]
+        public string FormMessage { get; set; }
+
+        public List<MessageContext> Messages { get; set; }
+
+        public  AsyncDuplexStreamingCall<MessageContext, MessageContext> call { get; set; }
+
+
+        public IAsyncEnumerable<MessageContext> messages { get; set; }
+
+
+        public async Task<IActionResult> OnGetAsync(long id)
+        {
+
+
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create($"http://localhost:5200/api/userservice/user/{id}");
+            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+
+            string answer = string.Empty;
+
+            using (Stream stream = response.GetResponseStream())
+            {
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    answer = await reader.ReadToEndAsync();
+                }
+            }
+
+
+            SelectedUser = JsonConvert.DeserializeObject<User>(answer);
+
+            CurrentUser = (User)cache.Get("profileuser");
+
+            cache.Set<User>("selecteduserdialog", SelectedUser);
+
+
+            //getting dialog
+            string answer2 = string.Empty;
+
+            try
+            {
+                HttpWebRequest request2 = (HttpWebRequest)WebRequest.
+                Create($"http://localhost:5200/api/userservice/dialogcontroller/dialog/{CurrentUser.Id}/{SelectedUser.Id}");
+                HttpWebResponse response2 = (HttpWebResponse)request2.GetResponse();
+
+
+
+                using (Stream stream = response2.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream))
+                    {
+                        answer2 = await reader.ReadToEndAsync();
+                    }
+                }
+            }
+            catch
+            {
+                HttpWebRequest request2 = (HttpWebRequest)WebRequest.
+                Create($"http://localhost:5200/api/userservice/dialogcontroller/dialog/{CurrentUser.Id}/{SelectedUser.Id}");
+                HttpWebResponse response2 = (HttpWebResponse)request2.GetResponse();
+
+
+                using (Stream stream = response2.GetResponseStream())
+                {
+                    using (StreamReader reader = new StreamReader(stream))
+                    {
+                        answer2 = await reader.ReadToEndAsync();
+                    }
+                }
+            }
+
+            Dialog = JsonConvert.DeserializeObject<Dialog>(answer2);
+
+            cache.Set<Dialog>("dialog", Dialog);
+
+            call = new Messanger.MessangerClient(GrpcChannel.ForAddress("http://localhost:5201")).MessageStream();
+
+            Task readTask = Task.Run(() =>
+            {
+                messages = call.ResponseStream.ReadAllAsync();
+            });
+
+            await call.RequestStream.CompleteAsync();
+            await readTask;
+
+            return Page();
+        }
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            CurrentUser = (User)cache.Get("profileuser");
+
+            SelectedUser = (User)cache.Get("selecteduserdialog");
+
+            Dialog = (Dialog)cache.Get("dialog");
+
+            call = new Messanger.MessangerClient(GrpcChannel.ForAddress("http://localhost:5201")).MessageStream();
+
+            await call.RequestStream.WriteAsync(new MessageContext()
+            {
+                UsersId = CurrentUser.Id,
+                Context = FormMessage,
+                DialogId = Dialog.Id
+            });
+
+            await call.RequestStream.CompleteAsync();
+
+            return Redirect($"/notifyer/dialog/{SelectedUser.Id}");
+            
+        }
+    }
+}

@@ -1,0 +1,135 @@
+﻿@page "/userprofile/{id}"
+@model UserProfile
+
+<div class=" container">
+    <div class="row" asp-validation-summary="All">
+        <div class="col-lg-7 col-md-8 col-sm-10 p-2" style="display:flex; justify-content:left">
+            @if (string.IsNullOrEmpty(Model.SelectedUser.Photo))
+            {
+                <img style="width: auto; height: 285px; border: 3px solid #47989d; border-radius: 7px; " src="/images/man.png" />
+            }
+            else
+            {
+                <img style="width: auto; height: 285px; border: 3px solid #47989d; border-radius: 7px; " src="@Model.SelectedUser.Photo" />
+            }
+            <div class="p-2" style="height:285px; font-size: 18px; border: 3px solid #47989d; 
+                    border-radius: 7px; background-color:#e3e2e5; position:relative;">
+                <h5>@Model.SelectedUser.Name</h5>
+                <h6>Your Data: </h6>
+                <ul style="list-style:none;">
+                    <li><i style="background-color:#fb7878; border-radius:10px;">Email: </i>@Model.SelectedUser.Email</li>
+                    <li><i style="background-color:#fb7878; border-radius:10px;">Address: </i>@Model.SelectedUser.Address</li>
+                    <li><i style="background-color:#fb7878; border-radius:10px;">Telephone: </i>@Model.SelectedUser.Telephone</li>
+                    <li><i style="background-color:#fb7878; border-radius:10px;">Likes: </i>@(Model.SelectedUser.Likes.Count() != 0 ? Model.SelectedUser.Likes.Count() : "0")</li>
+                    <li><i style="background-color:#fb7878; border-radius:10px;">Friends: </i>@(Model.SelectedUser.Friends.Count() != 0 ? Model.SelectedUser.Friends.Count() : "0")</li>
+                </ul>
+                <br /><br />
+                      <form asp-page="UserProfile" method="post" style="position:absolute; bottom:10px;">
+                          @if (Model.Exists)
+                          {
+                              <button class="btn" style="background-color: #ff0000; font-weight: 700;" type="submit" asp-route="/notifyer/user/{id}">
+                                  Liked
+                                  <img style="width:35px;height:35px;border-radius:50%;" src="/images/app/like.png" />
+                              </button>
+                          }
+                          else
+                          {
+                              <button class="btn" style="background-color:#ecc8c8; font-weight:700;" type="submit" asp-route="/notifyer/user/{id}">
+                                  Like
+                                  <img style="width:35px;height:35px;border-radius:50%;" src="/images/app/like.png" />
+                              </button>
+                          }
+                          <a class="btn" style="background-color:#95f7f1" href="/notifyer/dialog/@Model.SelectedUser.Id">Write message</a>
+                      </form>
+            </div>
+            
+        </div>
+
+
+    </div>
+    
+</div>
+
+@functions
+{
+    public class UserProfile : PageModel
+    {
+        private IMemoryCache cache;
+
+        public UserProfile(IMemoryCache cache)
+        {
+            this.cache = cache;
+        }
+
+        [BindProperty]
+        public User CurrentUser { get; set; }
+
+        [BindProperty]
+        public User SelectedUser { get; set; }
+
+        [BindProperty]
+        public bool Exists { get; set; } = false;
+
+        public async Task<IActionResult> OnGetAsync(long id)
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create($"http://localhost:5200/api/userservice/user/{id}");
+            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+
+            string answer = string.Empty;
+
+            using (Stream stream = response.GetResponseStream())
+            {
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    answer = await reader.ReadToEndAsync();
+                }
+            }
+
+            SelectedUser = JsonConvert.DeserializeObject<User>(answer);
+
+            CurrentUser = (User)cache.Get("profileuser");
+
+            foreach (Like like in SelectedUser.Likes)
+            {
+                if (like.CurrentUserId == CurrentUser.Id)
+                {
+                    Exists = true;
+                }
+            }
+
+            cache.Set<User>("selected", SelectedUser);
+
+            return Page();
+        }
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            CurrentUser = (User)cache.Get("profileuser");
+
+            SelectedUser = (User)cache.Get("selected");
+
+            HttpClient client = new HttpClient();
+
+            Dictionary<string, string> content = new Dictionary<string, string>()
+            {
+                {"LikedUserId", $"{SelectedUser.Id}" },
+                {"CurrentUserId", $"{CurrentUser.Id}" },
+                {"CurrentUserName", $"{CurrentUser.Name}" }
+            };
+
+            var encodedContent = new FormUrlEncodedContent(content);
+
+            var response = await client.PostAsync("http://localhost:5200/api/userservice/user/like", encodedContent);
+
+            if (response.IsSuccessStatusCode)
+            {
+                return Redirect($"/notifyer/user/{SelectedUser.Id}");
+            }
+
+            ModelState.AddModelError("Unliked", "Something wrong in server");
+
+            return Page();
+        }
+
+    }
+}

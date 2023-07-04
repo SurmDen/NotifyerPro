@@ -1,0 +1,152 @@
+﻿@page "/userlist"
+@model UserList
+
+<div class="container">
+
+
+    @if (Model.Users.Count() == 0)
+    {
+        <div class="row">
+            <div class="col-12 text-center">
+                <h4 class="bg-warning text-center text-white" style="border-radius:10px;">
+                    There are no users in our App
+                </h4>
+                <a class="btn btn-dark text-white" href="#">Go Back</a>
+            </div>
+        </div>
+    }
+    else
+    {
+        @foreach (User user in Model.Users)
+        {
+            <div class="row" asp-validation-summary="All">
+                        <div class="col-lg-2 col-md-3 col-sm-5" style="width:155px;height:155px;">
+                            <img style="width:150px;height:150px;border-radius:50%;"
+                             src="@user.Photo" class="img-fluid" />
+                        </div>
+                        <div class="col-lg-4 col-md-6 col-sm-8">
+                            <h5>@user.Name</h5>
+                            <h5>@user.Email</h5>
+                            <div style="display:flex; flex-direction:row;">
+                                <a class="btn btn-success mr-2" href="/notifyer/user/@user.Id">Check Profile</a>
+                                @if (Model.CurrentUser.Friends.Where(f => f.AnotherUserId == user.Id).Count() != 0)
+                                {
+                                    <form asp-page="userlist" method="post">
+                                        <input type="hidden" name="FutureFriendId" value="@user.Id" />
+                                        <button class="btn btn-warning" asp-route="/notifyer/users" type="submit">
+                                            Remove Friend <img style="width:35px;height:35px;border-radius:50%;" src="/images/app/friend2.jpg" />
+                                        </button>
+                                    </form>
+                                }
+                                else
+                                {
+                                    <form asp-page="userlist" method="post">
+                                        <input type="hidden" name="FutureFriendId" value="@user.Id" />
+                                        <button class="btn btn-dark" asp-route="/notifyer/users" type="submit">
+                                            Add To Friends <img style="width:35px;height:35px;border-radius:50%;" src="/images/app/friend.webp" />
+                                        </button>
+                                    </form>
+                                }
+                            </div>
+                        </div>
+            </div>
+
+        }
+    }
+
+</div>
+
+@functions
+{
+    public class UserList : PageModel
+    {
+        private IMemoryCache cache;
+
+        public UserList(IMemoryCache cache)
+        {
+            this.cache = cache;
+        }
+
+        [BindProperty]
+        public long FutureFriendId { get; set; }
+
+        public User CurrentUser { get; set; }
+
+        public List<User> Users { get; set; }
+
+        public async Task<IActionResult> OnGetAsync()
+        {
+            HttpWebRequest request = (HttpWebRequest)WebRequest
+                .Create("http://localhost:5200/api/userservice/users");
+
+            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+
+            StringBuilder answer = new StringBuilder();
+
+            using (Stream stream = response.GetResponseStream())
+            {
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    answer.Append(await reader.ReadToEndAsync());
+                }
+            }
+
+            Users = JsonConvert.DeserializeObject<List<User>>(answer.ToString());
+
+            //get current user
+
+            HttpWebRequest secrequest = (HttpWebRequest)WebRequest.
+            Create("http://localhost:5100/api/identityservice/currentuser");
+
+            HttpWebResponse secresponse = (HttpWebResponse)secrequest.GetResponse();
+
+            string responseString;
+
+            using (Stream stream = secresponse.GetResponseStream())
+            {
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    responseString = await reader.ReadToEndAsync();
+                }
+            }
+
+            CurrentUser = JsonConvert.DeserializeObject<User>(responseString);
+
+            cache.Set<User>("currentuser", CurrentUser);
+
+            cache.Set<List<User>>("users", Users);
+
+
+            return Page();
+        }
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            CurrentUser = (User)cache.Get("currentuser");
+
+            Users = (List<User>)cache.Get("users");
+
+            HttpClient client = new HttpClient();
+
+            Dictionary<string, string> content = new Dictionary<string, string>()
+            {
+                {"CurrentUserId", $"{CurrentUser.Id}" },
+                {"FutureFriendId", $"{FutureFriendId}" }
+            };
+
+            var encodedContent = new FormUrlEncodedContent(content);
+
+            var response = await client.PostAsync("http://localhost:5200/api/userservice/user/friendship", encodedContent);
+
+            var secondResponse = await client.PostAsync("http://localhost:5100/api/identityservice/current/update/friends", encodedContent);
+
+            if (response.IsSuccessStatusCode && secondResponse.IsSuccessStatusCode)
+            {
+                return Redirect("/notifyer/users");
+            }
+
+            ModelState.AddModelError("hz", "something wrong");
+            return Page();
+        }
+    }
+}

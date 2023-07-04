@@ -1,0 +1,153 @@
+﻿@page "/myprofile"
+@model MyProfile
+
+<div class=" container">
+    <div class="row">
+        <div class="col-lg-7 col-md-8 col-sm-10 p-2" style="display:flex; justify-content:left">
+            @if (string.IsNullOrEmpty(Model.Profile.Photo))
+            {
+                <img style="width: auto; height: 285px; border: 3px solid #47989d; border-radius:7px;" src="/images/man.png" />
+            }
+            else
+            {
+                <img style="width: auto; height: 285px; border: 3px solid #47989d; border-radius: 7px; " src="@Model.Profile.Photo" />
+            }
+            <div class="p-2" style="height:285px; font-size: 18px; border: 3px solid #47989d; border-radius: 7px; background-color:#e3e2e5">
+                <h5>@Model.Profile.Name</h5>
+                <h6>Your Data: </h6>
+                <ul style="list-style:none;">
+                    <li><i style="background-color:#fb7878; border-radius:10px;">Email: </i> @Model.Profile.Email</li>
+                    <li><i style="background-color: #fb7878; border-radius: 10px;">Address: </i> @Model.Profile.Address</li>
+                    <li><i style="background-color: #fb7878; border-radius: 10px;">Telephone: </i> @Model.Profile.Telephone</li>
+                    <li><i style="background-color: #fb7878; border-radius: 10px;">Likes: </i> @(Model.Profile.Likes.Count() != 0 ? Model.Profile.Likes.Count() : "0")</li>
+                    <li><i style="background-color: #fb7878; border-radius: 10px;">Friends: </i> @(Model.Profile.Friends.Count() != 0 ? Model.Profile.Friends.Count() : "0")</li>
+                </ul>
+                <br /><br />
+            </div>
+        </div>
+        
+        
+    </div>
+    <div class="row">
+        <div class="col-lg-7 col-md-8 col-sm-10 p-2">
+            <form asp-page="MyProfile" method="post" enctype="multipart/form-data">
+                <div class="custom-file" asp-validation-summary="All">
+                    <input type="file" class="custom-file-input" id="customFile" asp-for="PhotoFile" />
+                    @if (Model.Profile.Photo != null)
+                    {
+                        <label class="custom-file-label mb-2" for="customFile">Choose new file</label>
+                        <div class="text-center mt-2">
+                            <input type="submit" class=" btn" style="background-color:#fb7878" value="Reload" asp-route="/notifyer/profile" />
+                        </div>
+                    }
+                    else
+                    {
+                        <label class="custom-file-label mb-2" for="customFile">Choose file</label>
+                        <div class="text-center mt-2">
+                            <input type="submit" class=" btn btn-dark" value="Load" asp-route="/notifyer/profile" />
+                        </div>
+                    }
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+@functions{
+    public class MyProfile : PageModel
+    {
+        private IMemoryCache Cache;
+        private IWebHostEnvironment hostEnvironment;
+
+        public MyProfile(IMemoryCache cache, IWebHostEnvironment hostEnvironment)
+        {
+            this.hostEnvironment = hostEnvironment;
+            this.Cache = cache;
+        }
+
+        [BindProperty]
+        public User Profile { get; set; }
+
+        [BindProperty]
+        public IFormFile PhotoFile { get; set; }
+
+        public async Task OnGet()
+        {
+
+            HttpWebRequest request = (HttpWebRequest)WebRequest.
+            Create("http://localhost:5100/api/identityservice/currentuser");
+
+            HttpWebResponse response = (HttpWebResponse)request.GetResponse();
+
+            string responseString;
+
+            using (Stream stream = response.GetResponseStream())
+            {
+                using (StreamReader reader = new StreamReader(stream))
+                {
+                    responseString = await reader.ReadToEndAsync();
+                }
+            }
+
+            Profile = JsonConvert.DeserializeObject<User>(responseString);
+
+
+
+            Cache.Set<User>("profileuser", Profile);
+
+        }
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+            Profile = (User)Cache.Get("profileuser");
+
+            if (PhotoFile != null)
+            {
+
+                string filename = PhotoFile.FileName.Substring(PhotoFile.FileName.Length - 7);
+
+                string path = @"D:\Портфолио\NotifyerPro\OcelotApiGateway\wwwroot\images\" +
+                    $"{Profile.Email}_{filename}";
+
+                string dbpath = $"/images/{Profile.Email}_{filename}";
+
+                FileInfo fileInfo = new FileInfo(path);
+
+                if (fileInfo.Exists)
+                {
+                    fileInfo.Delete();
+                }
+
+                using (FileStream stream = new FileStream(path, FileMode.Create))
+                {
+                    await PhotoFile.CopyToAsync(stream);
+                }
+
+                HttpClient client = new HttpClient();
+
+                Dictionary<string, string> data = new Dictionary<string, string>()
+                {
+                    {"path", dbpath }
+                };
+
+                var formData = new FormUrlEncodedContent(data);
+
+                var responce = await client.PostAsync("http://localhost:5200/api/userservice/user/addphoto", formData);
+
+                var secondResponse = await client.PostAsync("http://localhost:5100/api/identityservice/current/update/photo", formData);
+
+                if (responce.IsSuccessStatusCode && secondResponse.IsSuccessStatusCode)
+                {
+                    return Redirect("/notifyer/profile");
+                }
+
+                ModelState.AddModelError("Error", "Something wrong");
+                return Page();
+            }
+
+            ModelState.AddModelError("File", "please choose new file");
+            return Page();
+
+        }
+    }
+}

@@ -1,0 +1,114 @@
+﻿@page "/loginpage"
+@model LoginPage
+
+<div class="container">
+    <div class="row mt-3">
+        <div class="col-3"></div>
+        <div class="col-6" asp-validation-summary="All">
+            <h4 class="text-center text-white" style="border-radius: 15px; background-color: #06313a">
+                Insert your data to Log In
+            </h4>
+            <form asp-page="loginpage" method="post">
+                <div class="form-group">
+                    <label>Your Name:</label>
+                    <input asp-for="Name" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label>Your Password:</label>
+                    <input asp-for="Password" class="form-control" type="password" />
+                </div>
+                <div class="form-group">
+                    <label>Your Email:</label>
+                    <input asp-for="Email" class="form-control" />
+                </div>
+                <br />
+                <div class="text-center">
+                    <button class="btn text-white" style="background-color: #06313a" type="submit">Log In</button>
+                    <a class=" btn text-white" style="background-color:#d86969" href="/createaccount">Create Account</a>
+                </div>
+            </form>
+        </div>
+        <div class="col-3"></div>
+    </div>
+</div>
+
+@functions{
+    public class LoginPage: PageModel
+    {
+        private IMemoryCache cache;
+
+        public LoginPage(IMemoryCache cache)
+        {
+            this.cache = cache;
+        }
+
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Name { get; set; }
+
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Password { get; set; }
+
+        [EmailAddress(ErrorMessage = "It is not looks like email address, be more attentevly")]
+        [BindProperty]
+        [Required(ErrorMessage = "This field is important!")]
+        public string Email { get; set; }
+
+        public IActionResult OnGet()
+        {
+            return Page();
+        }
+
+        private int code;
+
+        public async Task<IActionResult> OnPostAsync()
+        {
+
+            if (ModelState.IsValid)
+            {
+                Dictionary<string, string> content = new Dictionary<string, string>()
+                {
+                {"Password", Password },
+                {"Role", "" },
+                {"Name", Name },
+                {"Email", Email }
+                };
+
+                HttpClient client = new HttpClient();
+
+                var encodedContent = new FormUrlEncodedContent(content);
+
+                var response = await client.PostAsync("http://localhost:5100/api/identityservice/login", encodedContent);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string token = await response.Content.ReadAsStringAsync();
+
+                    try
+                    {
+                        cache.Remove("token");
+                    }
+                    catch
+                    {
+
+                    }
+
+                    cache.Set<string>("token", token);
+
+                    Random random = new Random();
+
+                    code = random.Next(1000, 9999);
+
+                    //await EmailService.SendEmailAsync(Email, code);
+
+                    cache.Set<int>("code", code);
+
+                    return Redirect("/secondfactor");
+                }
+            }
+
+            return Page();
+        }
+    }
+}
